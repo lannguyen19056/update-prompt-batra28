@@ -112,20 +112,29 @@ def get_db_connection():
         return None
 
 
-def fetch_pending_records(conn, limit=50):
+def fetch_pending_records(conn, limit=30):
     """
-    Fetch records that need Veo3 prompts.
-    Uses FOR UPDATE SKIP LOCKED to prevent concurrent jobs from processing same records.
+    Fetch pending records and mark them with crawl_status=TRUE to prevent
+    other jobs from processing the same records.
+    
+    Uses UPDATE ... RETURNING to atomically claim records.
     """
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Atomically claim records by setting crawl_status = TRUE
+            # Only select records where crawl_status IS NULL (not yet claimed)
             cur.execute("""
-                SELECT id, title, image_data
-                FROM products_ai
-                WHERE prompt_veo3 IS NULL AND image_status = TRUE
-                ORDER BY id ASC
-                LIMIT %s
-                FOR UPDATE SKIP LOCKED
+                UPDATE products_ai
+                SET crawl_status = TRUE
+                WHERE id IN (
+                    SELECT id FROM products_ai
+                    WHERE prompt_veo3 IS NULL 
+                      AND image_status = TRUE
+                      AND crawl_status IS NULL
+                    ORDER BY id ASC
+                    LIMIT %s
+                )
+                RETURNING id, title, image_data
             """, (limit,))
             records = cur.fetchall()
             conn.commit()
