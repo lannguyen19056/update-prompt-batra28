@@ -112,8 +112,11 @@ def get_db_connection():
         return None
 
 
-def fetch_pending_records(conn):
-    """Fetch records that need Veo3 prompts."""
+def fetch_pending_records(conn, limit=50):
+    """
+    Fetch records that need Veo3 prompts.
+    Uses FOR UPDATE SKIP LOCKED to prevent concurrent jobs from processing same records.
+    """
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("""
@@ -121,11 +124,15 @@ def fetch_pending_records(conn):
                 FROM products_ai
                 WHERE prompt_veo3 IS NULL AND image_status = TRUE
                 ORDER BY id ASC
-                LIMIT 30
-            """)
-            return cur.fetchall()
+                LIMIT %s
+                FOR UPDATE SKIP LOCKED
+            """, (limit,))
+            records = cur.fetchall()
+            conn.commit()
+            return records
     except Exception as e:
         print(f"Error fetching records: {e}")
+        conn.rollback()
         return []
 
 
@@ -304,7 +311,7 @@ async def process_records_with_api(client, conn, limit_records=None):
             # Wait before next request to avoid rate limits
             if idx < len(records):
                 print(f"\n⏳ Waiting 15 seconds before next record...\n")
-                await asyncio.sleep(25)
+                await asyncio.sleep(15)
 
 
 async def main():
@@ -350,8 +357,8 @@ async def main():
     secure_1psidts = cookies.get('__Secure-1PSIDTS')
     
     print(f"\n✅ Found required cookies:")
-    print(f"   __Secure-1PSID: [HIDDEN - {len(secure_1psid)} chars]")
-    print(f"   __Secure-1PSIDTS: {'[HIDDEN - ' + str(len(secure_1psidts)) + ' chars]' if secure_1psidts else 'NOT FOUND'}")
+    print(f"   __Secure-1PSID: {secure_1psid[:50]}...")
+    print(f"   __Secure-1PSIDTS: {secure_1psidts[:50] if secure_1psidts else 'NOT FOUND'}...")
     
     # Connect to database
     print(f"\nConnecting to database...")
@@ -363,8 +370,8 @@ async def main():
     
     # Initialize Gemini client
     print(f"\nInitializing Gemini API client...")
-    print(f"   Using __Secure-1PSID: [HIDDEN]")
-    print(f"   Using __Secure-1PSIDTS: {'[HIDDEN]' if secure_1psidts else 'None'}")
+    print(f"   Using __Secure-1PSID: {secure_1psid[:30]}...")
+    print(f"   Using __Secure-1PSIDTS: {secure_1psidts[:30] if secure_1psidts else 'None'}...")
     try:
         client = GeminiClient(
             secure_1psid=secure_1psid,
