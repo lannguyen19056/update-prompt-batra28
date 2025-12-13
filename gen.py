@@ -130,7 +130,7 @@ def fetch_pending_records(conn, limit=30):
                     SELECT id FROM products_ai
                     WHERE prompt_veo3 IS NULL 
                       AND image_status = TRUE
-                      AND crawl_status IS NULL
+                      AND crawl_status IS NULL AND category = 'vip'
                     ORDER BY id ASC
                     LIMIT %s
                 )
