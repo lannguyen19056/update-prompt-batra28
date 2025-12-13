@@ -112,7 +112,7 @@ def get_db_connection():
         return None
 
 
-def fetch_pending_records(conn, limit=30):
+def fetch_pending_records(conn, limit=300):
     """
     Fetch pending records and mark them with crawl_status=TRUE to prevent
     other jobs from processing the same records.
